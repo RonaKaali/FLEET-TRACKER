@@ -9,7 +9,7 @@ import uvicorn
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from web_app import app, track_device, init_db, init_live_csv, SessionLocal, Target, DB_PATH
+from index import app, track_device, init_db, init_live_csv, SessionLocal, Target, DB_PATH
 
 # Dictionary to keep track of running threads: {target_id: thread}
 active_trackers = {}
