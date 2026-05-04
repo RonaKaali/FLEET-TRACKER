@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Share Location | FleetCommand</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --card: rgba(30, 41, 59, 0.8);
+            --primary: #38bdf8;
+            --primary-glow: rgba(56, 189, 248, 0.3);
+            --success: #10b981;
+            --error: #f43f5e;
+            --text: #f1f5f9;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            background-image: radial-gradient(circle at center, rgba(56, 189, 248, 0.05) 0%, transparent 70%);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .card {
+            background: var(--card);
+            backdrop-filter: blur(16px);
+            padding: 2.5rem;
+            border-radius: 2rem;
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid var(--border);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        h1 { 
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.75rem; 
+            margin-bottom: 0.5rem; 
+            background: linear-gradient(135deg, #fff 0%, var(--primary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        p { color: #94a3b8; font-size: 0.9rem; margin-bottom: 2rem; }
+        input {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            color: white;
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus { border-color: var(--primary); }
+        button {
+            width: 100%;
+            padding: 1.1rem;
+            border: none;
+            border-radius: 1rem;
+            background: var(--primary);
+            color: #0b0f19;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }
+        button.active { 
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--success);
+            color: var(--success);
+            box-shadow: none;
+        }
+        button:hover:not(.active) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--primary-glow);
+        }
+        .status { margin-top: 1.5rem; font-size: 0.85rem; padding: 0.75rem; border-radius: 0.75rem; }
+        .status.active { background: rgba(16, 185, 129, 0.05); color: var(--success); }
+        .status.error { background: rgba(244, 63, 94, 0.05); color: var(--error); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>📍 Bagikan Lokasi</h1>
+        <p>Hubungkan GPS Anda ke dashboard FleetCommand secara real-time.</p>
+        
+        <input type="text" id="name" placeholder="Masukkan nama Anda" required>
+        <button id="toggleBtn">Mulai Berbagi Lokasi</button>
+        
+        <div id="status" class="status">Sistem siap menghubungkan</div>
+    </div>
+
+    <script>
+        let isSharing = false;
+        let watchId = null;
+        const btn = document.getElementById('toggleBtn');
+        const status = document.getElementById('status');
+        const nameInput = document.getElementById('name');
+
+        btn.addEventListener('click', () => {
+            if (!isSharing) {
+                const name = nameInput.value.trim();
+                if (!name) { alert('Harap masukkan nama Anda'); return; }
+                startSharing(name);
+            } else {
+                stopSharing();
+            }
+        });
+
+        function startSharing(name) {
+            if (!navigator.geolocation) {
+                showError("Browser tidak mendukung geolokasi");
+                return;
+            }
+
+            isSharing = true;
+            btn.textContent = "Hentikan Sesi";
+            btn.classList.add('active');
+            nameInput.disabled = true;
+            status.textContent = "Menghubungkan ke GPS...";
+            status.className = "status active";
+
+            watchId = navigator.geolocation.watchPosition(
+                (pos) => {
+                    const data = {
+                        name: name,
+                        lat: pos.coords.latitude,
+                        lon: pos.coords.longitude
+                    };
+                    reportLocation(data);
+                },
+                (err) => {
+                    showError("GPS Gagal: " + err.message);
+                    stopSharing();
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            );
+        }
+
+        function stopSharing() {
+            isSharing = false;
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+            btn.textContent = "Mulai Berbagi Lokasi";
+            btn.classList.remove('active');
+            nameInput.disabled = false;
+            status.textContent = "Sesi dihentikan";
+            status.className = "status";
+        }
+
+        async function reportLocation(data) {
+            try {
+                const response = await fetch('/api/report_location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (response.ok) {
+                    status.textContent = `⚡ Live: ${data.lat.toFixed(5)}, ${data.lon.toFixed(5)}`;
+                }
+            } catch (e) {
+                showError("Koneksi terputus");
+            }
+        }
+
+        function showError(msg) {
+            status.textContent = "❌ " + msg;
+            status.className = "status error";
+        }
+    </script>
+</body>
+</html>

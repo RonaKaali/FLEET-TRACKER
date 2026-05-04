@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Tracker | Pemantauan Aset Real-time</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Leaflet Map library -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-area">
+                <span class="icon">🚚</span>
+                <h1>Fleet Tracker</h1>
+            </div>
+            <div class="status-badge">
+                <span class="dot"></span> Monitoring Langsung
+            </div>
+        </header>
+
+        <main>
+            <section class="card live-data" style="animation-delay: 0.1s;">
+                <div class="card-header">
+                    <div>
+                        <h2>🗺️ Peta Armada Langsung</h2>
+                        <p>Posisi real-time dari target yang aktif</p>
+                    </div>
+                    <div class="status-badge">
+                        <span class="dot"></span> Aktif
+                    </div>
+                </div>
+                <div id="map" style="height: 400px; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border);"></div>
+                
+                <div class="card-header" style="margin-top: 2rem;">
+                    <h2>🔎 Aktivitas Terbaru</h2>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Aset/Perangkat</th>
+                                <th>Lintang</th>
+                                <th>Bujur</th>
+                                <th>Kota</th>
+                                <th>Negara</th>
+                                <th>Alamat</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rows %}
+                            <tr>
+                                <td>{{ row[0] }}</td>
+                                <td><span class="device-name" onclick="focusOnTarget('{{ row[2] }}')">{{ row[2] }}</span></td>
+                                <td><code>{{ row[3] }}</code></td>
+                                <td><code>{{ row[4] }}</code></td>
+                                <td>{{ row[5] }}</td>
+                                <td>{{ row[6] }}</td>
+                                <td class="address-cell" title="{{ row[7] }}">{{ row[7] }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% if not rows %}
+                            <tr>
+                                <td colspan="7" class="empty-state">Belum ada data. Bagikan link broadcast untuk mulai melacak.</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <aside class="controls">
+                <section class="card broadcast-card" style="animation-delay: 0.2s;">
+                    <h2>🔗 Link Broadcast</h2>
+                    <p>Bagikan link ini ke kurir untuk mulai pelacakan live.</p>
+                    <div class="copy-box">
+                        <input type="text" id="shareUrl" readonly>
+                        <button onclick="copyLink()" class="btn btn-secondary" style="width: auto;">Salin</button>
+                    </div>
+                </section>
+
+                <section class="card targets-card" style="animation-delay: 0.3s;">
+                    <h2>🎯 Kelola Target</h2>
+                    <form action="/targets/add" method="post" class="add-form">
+                        <input type="text" name="name" placeholder="Nama Perangkat" required>
+                        <input type="text" name="ip_address" placeholder="IP Publik (Opsional)">
+                        <input type="text" name="description" placeholder="Deskripsi">
+                        <button type="submit" class="btn btn-primary">Tambah Target</button>
+                    </form>
+                    <div class="target-list">
+                        {% for target in targets %}
+                        <div class="target-item">
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.9rem;">{{ target.name }}</div>
+                                <div style="color: var(--text-muted); font-size: 0.75rem;">{{ target.ip_address or "Pelacakan via Link" }}</div>
+                            </div>
+                            <form action="/targets/delete/{{ target.id }}" method="post">
+                                <button type="submit" class="btn-icon">🗑️</button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <section class="card export-card" style="animation-delay: 0.4s;">
+                    <h2>💾 Analisis Data</h2>
+                    <p>Ekspor riwayat armada Anda.</p>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+                        <a href="/export/csv" class="btn btn-secondary">CSV</a>
+                        <a href="/export/json" class="btn btn-secondary">JSON</a>
+                    </div>
+                    <form action="/data/reset" method="post" onsubmit="return confirm('Hapus semua data lokasi?');" style="margin-top: 0.5rem;">
+                        <button type="submit" class="btn btn-danger">Reset Semua</button>
+                    </form>
+                </section>
+            </aside>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 FleetCommand Enterprise. Didesain secara khusus untuk Jennifer.</p>
+        </footer>
+    </div>
+    
+    <script>
+        // Leaflet Map Initialization with Standard Tiles
+        const map = L.map('map').setView([-2.0, 115.0], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        let markers = {};
+
+        async function updateMap() {
+            try {
+                const response = await fetch('/api/map_data');
+                const data = await response.json();
+                
+                if (!data || data.length === 0) return;
+
+                data.forEach(target => {
+                    const pos = [target.lat, target.lon];
+                    const popupContent = `<b>${target.name}</b><br>${target.address || 'Mencari alamat...'}<br><small>${target.time}</small>`;
+                    
+                    if (markers[target.name]) {
+                        markers[target.name].setLatLng(pos);
+                        markers[target.name].getPopup().setContent(popupContent);
+                    } else {
+                        markers[target.name] = L.marker(pos).addTo(map)
+                            .bindPopup(popupContent);
+                    }
+                });
+
+                // Auto-center map to show all markers
+                const markerArray = Object.values(markers);
+                if (markerArray.length > 0) {
+                    const group = new L.featureGroup(markerArray);
+                    map.fitBounds(group.getBounds().pad(0.1));
+                }
+            } catch (error) {
+                console.error('Kesalahan saat memperbarui peta:', error);
+            }
+        }
+
+        function focusOnTarget(name) {
+            if (markers[name]) {
+                const marker = markers[name];
+                map.setView(marker.getLatLng(), 18); // Zoom in close
+                marker.openPopup();
+                
+                // Optional: Smooth scroll back to map
+                document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+            } else {
+                alert("Target '" + name + "' belum muncul di peta.");
+            }
+        }
+
+        // Refresh map every 10 seconds
+        updateMap();
+        setInterval(updateMap, 10000);
+
+        // Auto-refresh table every 30 seconds
+        setTimeout(() => { location.reload(); }, 30000);
+
+        // Initialize Share URL
+        const shareUrlInput = document.getElementById('shareUrl');
+        const fullUrl = window.location.origin + '/share-location';
+        shareUrlInput.value = fullUrl;
+
+        function copyLink() {
+            shareUrlInput.select();
+            shareUrlInput.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(shareUrlInput.value);
+            alert("Link berhasil disalin! Kirimkan ke kurir/target.");
+        }
+    </script>
+</body>
+</html>
