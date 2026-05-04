@@ -46,9 +46,9 @@ def get_db():
 API_DIR = os.path.abspath(os.path.dirname(__file__))
 BASE_DIR = os.path.abspath(os.path.join(API_DIR, ".."))
 EXPORT_DIR = os.path.join(BASE_DIR, "exports")
-CSV_LIVE = os.path.join(BASE_DIR, "live_location_log.csv")
-DB_PATH = os.path.join(BASE_DIR, "fleet_tracker.db")
-LOG_FILE = os.path.join(BASE_DIR, "fleet_tracker.log")
+CSV_LIVE = os.path.join("/tmp", "live_location_log.csv")
+DB_PATH = os.path.join("/tmp", "fleet_tracker.db")
+LOG_FILE = os.path.join("/tmp", "fleet_tracker.log")
 POLL_INTERVAL = 30  # seconds per device
 API_DELAY_MS = 1000
 MAX_RETRY = 3
@@ -96,8 +96,11 @@ engine = create_engine(f"sqlite:///{DB_PATH}", future=True, echo=False)
 SessionLocal = sessionmaker(bind=engine, future=True)
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database initialized.")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database initialized.")
+    except Exception as e:
+        logger.warning(f"Could not initialize SQLite (Read-only?): {e}")
 
 # ----------------------------------------------------------------------
 # Rate‑limit helper
