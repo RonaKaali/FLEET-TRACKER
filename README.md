@@ -1,6 +1,14 @@
 # 🚚 FleetCommand Enterprise (v1.0.1)
 
+[![Deployment Status](https://img.shields.io/badge/Status-Online-brightgreen)](https://vercel.com)
+[![Platform](https://img.shields.io/badge/Platform-Vercel-black)](https://vercel.com)
+[![Database](https://img.shields.io/badge/Database-MongoDB_Atlas-green)](https://mongodb.com)
+
 **FleetCommand Enterprise** adalah sistem pelacakan aset dan armada logistik berbasis web yang dirancang untuk pemantauan real-time dengan tingkat akurasi tinggi. Aplikasi ini memungkinkan manajer armada untuk melacak kendaraan atau personel langsung di peta interaktif hanya melalui sebuah tautan (link).
+
+## 🚀 Live Demo
+Aplikasi ini sudah online! Anda dapat mengakses dashboard utama melalui tautan berikut:
+**[Buka Dashboard Fleet Tracker](https://fleet-tracker-rona-kaalis-projects.vercel.app)** *(Ganti dengan link Vercel Anda jika berbeda)*
 
 ![Fleet Tracker Dashboard](https://raw.githubusercontent.com/RonaKaali/FLEET-TRACKER/master/static/preview.png) *(Catatan: Tambahkan screenshot Anda di sini)*
 
