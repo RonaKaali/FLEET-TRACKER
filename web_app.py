@@ -25,6 +25,20 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import Column, Integer, String, Float, DateTime, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import pymongo
+from bson import ObjectId
+
+# ----------------------------------------------------------------------
+# Configuration
+# ----------------------------------------------------------------------
+MONGO_URI = os.environ.get("MONGO_URI")
+DB_NAME = "fleet_command"
+
+def get_db():
+    if MONGO_URI:
+        client = pymongo.MongoClient(MONGO_URI)
+        return client[DB_NAME]
+    return None
 
 # ----------------------------------------------------------------------
 # Configuration
@@ -248,27 +262,44 @@ async def startup_event():
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     rows: List[List[str]] = []
-    header: List[str] = []
-    targets: List[Target] = []
-    session = SessionLocal()
-    try:
-        if os.path.isfile(CSV_LIVE):
-            with open(CSV_LIVE, "r", encoding="utf-8") as f:
-                reader = csv.reader(f)
-                header = next(reader)
-                for row in reader:
-                    rows.append(row)
-            rows = rows[-20:]
-        targets = session.query(Target).all()
-    except Exception as exc:
-        logger.error(f"Failed to load dashboard data: {exc}")
-    finally:
-        session.close()
-        
+    targets: List[dict] = []
+    
+    db = get_db()
+    if db:
+        # MongoDB Mode
+        logs = list(db.location_logs.find().sort("timestamp", -1).limit(20))
+        for l in logs:
+            rows.append([
+                l.get("timestamp_str", ""),
+                str(l.get("device_id", "")),
+                l.get("device_name", ""),
+                l.get("lat", ""),
+                l.get("lon", ""),
+                l.get("city", ""),
+                l.get("country", ""),
+                l.get("address", "")
+            ])
+        targets = list(db.targets.find())
+        for t in targets: t["id"] = str(t["_id"])
+    else:
+        # SQLite Mode
+        session = SessionLocal()
+        try:
+            if os.path.isfile(CSV_LIVE):
+                with open(CSV_LIVE, "r", encoding="utf-8") as f:
+                    reader = csv.reader(f)
+                    next(reader)
+                    for row in reader: rows.append(row)
+                rows = rows[-20:]
+            targets_db = session.query(Target).all()
+            targets = [{"id": t.id, "name": t.name, "ip_address": t.ip_address} for t in targets_db]
+        finally:
+            session.close()
+            
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"rows": rows, "header": header, "targets": targets},
+        context={"rows": rows, "targets": targets},
     )
 
 @app.get("/share-location", response_class=HTMLResponse)
@@ -320,41 +351,49 @@ class LocationReport(BaseModel):
 
 @app.post("/api/report_location")
 async def report_location(report: LocationReport):
-    session = SessionLocal()
-    try:
-        # Check if target exists, if not create one
-        target = session.query(Target).filter(Target.name == report.name).first()
+    db = get_db()
+    tz_wita = timezone(timedelta(hours=8))
+    ts_str = datetime.now(tz_wita).strftime("%d-%m-%Y %H:%M:%S")
+    address = reverse_geocode(report.lat, report.lon)
+
+    if db:
+        # MongoDB Mode
+        target = db.targets.find_one({"name": report.name})
         if not target:
-            target = Target(name=report.name, description="Remote Broadcaster")
-            session.add(target)
-            session.commit()
-            session.refresh(target)
-            logger.info(f"Dynamically created target for broadcaster: {report.name}")
+            res = db.targets.insert_one({"name": report.name, "description": "Remote Broadcaster"})
+            target_id = str(res.inserted_id)
+        else:
+            target_id = str(target["_id"])
         
-        # Reverse geocode (optional but nice)
-        address = reverse_geocode(report.lat, report.lon)
-        
-        # Log to DB
-        new_log = LocationLog(
-            device_id=target.id,
-            device_name=target.name,
-            lat=report.lat,
-            lon=report.lon,
-            address=address,
-            timestamp=datetime.now(timezone(timedelta(hours=8)))
-        )
-        session.add(new_log)
-        session.commit()
-        
-        # Log to CSV
-        append_live_csv(target.id, target.name, report.lat, report.lon, None, None, address)
-        
+        db.location_logs.insert_one({
+            "device_id": target_id,
+            "device_name": report.name,
+            "lat": report.lat,
+            "lon": report.lon,
+            "address": address,
+            "timestamp": datetime.now(tz_wita),
+            "timestamp_str": ts_str
+        })
         return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"Error processing report from {report.name}: {e}")
-        return {"status": "error", "message": str(e)}
-    finally:
-        session.close()
+    else:
+        # SQLite Mode
+        session = SessionLocal()
+        try:
+            target = session.query(Target).filter(Target.name == report.name).first()
+            if not target:
+                target = Target(name=report.name, description="Remote Broadcaster")
+                session.add(target); session.commit(); session.refresh(target)
+            
+            new_log = LocationLog(
+                device_id=target.id, device_name=target.name,
+                lat=report.lat, lon=report.lon, address=address,
+                timestamp=datetime.now(timezone(timedelta(hours=8)))
+            )
+            session.add(new_log); session.commit()
+            append_live_csv(target.id, target.name, report.lat, report.lon, None, None, address)
+            return {"status": "ok"}
+        finally:
+            session.close()
 
 # ----------------------------------------------------------------------
 # Export endpoints (full DB export)
@@ -418,30 +457,39 @@ async def export_json():
 @app.get("/api/map_data")
 async def api_map_data():
     """Return the latest location for every active target."""
-    session = SessionLocal()
-    try:
-        # Get all unique device names from logs
-        device_names = [r[0] for r in session.query(LocationLog.device_name).distinct().all()]
-        
-        result = []
+    db = get_db()
+    result = []
+    
+    if db:
+        # MongoDB Mode
+        device_names = db.location_logs.distinct("device_name")
         for name in device_names:
-            # Get the very last log for this device name
-            latest = (
-                session.query(LocationLog)
-                .filter(LocationLog.device_name == name)
-                .order_by(LocationLog.timestamp.desc())
-                .first()
-            )
+            latest = db.location_logs.find_one({"device_name": name}, sort=[("timestamp", -1)])
             if latest:
                 result.append({
-                    "name": latest.device_name,
-                    "lat": latest.lat,
-                    "lon": latest.lon,
-                    "address": latest.address or "Lokasi terdeteksi",
-                    "time": latest.timestamp.strftime("%d-%m-%Y %H:%M:%S")
+                    "name": latest["device_name"],
+                    "lat": latest["lat"],
+                    "lon": latest["lon"],
+                    "address": latest.get("address") or "Lokasi terdeteksi",
+                    "time": latest.get("timestamp_str") or ""
                 })
-        return result
-    finally:
-        session.close()
+    else:
+        # SQLite Mode
+        session = SessionLocal()
+        try:
+            device_names = [r[0] for r in session.query(LocationLog.device_name).distinct().all()]
+            for name in device_names:
+                latest = session.query(LocationLog).filter(LocationLog.device_name == name).order_by(LocationLog.timestamp.desc()).first()
+                if latest:
+                    result.append({
+                        "name": latest.device_name,
+                        "lat": latest.lat,
+                        "lon": latest.lon,
+                        "address": latest.address or "Lokasi terdeteksi",
+                        "time": latest.timestamp.strftime("%d-%m-%Y %H:%M:%S")
+                    })
+        finally:
+            session.close()
+    return result
 
 # End of web_app.py

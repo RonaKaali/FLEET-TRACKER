@@ -1,8 +1,9 @@
 fastapi
 uvicorn
-sqlalchemy
 geocoder
 requests
 jinja2
 python-multipart
 pydantic
+pymongo
+dnspython
