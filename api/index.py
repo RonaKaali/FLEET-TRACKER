@@ -269,7 +269,7 @@ async def read_root(request: Request):
     targets: List[dict] = []
     
     db = get_db()
-    if db:
+    if db is not None:
         # MongoDB Mode
         logs = list(db.location_logs.find().sort("timestamp", -1).limit(20))
         for l in logs:
@@ -360,7 +360,7 @@ async def report_location(report: LocationReport):
     ts_str = datetime.now(tz_wita).strftime("%d-%m-%Y %H:%M:%S")
     address = reverse_geocode(report.lat, report.lon)
 
-    if db:
+    if db is not None:
         # MongoDB Mode
         target = db.targets.find_one({"name": report.name})
         if not target:
@@ -464,7 +464,7 @@ async def api_map_data():
     db = get_db()
     result = []
     
-    if db:
+    if db is not None:
         # MongoDB Mode
         device_names = db.location_logs.distinct("device_name")
         for name in device_names:
