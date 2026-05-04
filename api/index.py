@@ -43,8 +43,10 @@ def get_db():
 # ----------------------------------------------------------------------
 # Configuration
 # ----------------------------------------------------------------------
-API_DIR = os.path.abspath(os.path.dirname(__file__))
-BASE_DIR = os.path.abspath(os.path.join(API_DIR, ".."))
+# Vercel-friendly path detection
+CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.abspath(os.path.join(CURRENT_FILE_DIR, ".."))
+
 EXPORT_DIR = os.path.join("/tmp", "exports")
 CSV_LIVE = os.path.join("/tmp", "live_location_log.csv")
 DB_PATH = os.path.join("/tmp", "fleet_tracker.db")
@@ -251,8 +253,17 @@ def track_device(
 app = FastAPI(title="Fleet Tracker", description="Real‑time asset tracking using IP geolocation", version="1.0.0")
 
 # Mount static files and Jinja2 templates
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+static_dir = os.path.join(BASE_DIR, "static")
+template_dir = os.path.join(BASE_DIR, "templates")
+
+if not os.path.exists(static_dir):
+    # Fallback if Vercel puts them elsewhere
+    static_dir = os.path.join(CURRENT_FILE_DIR, "..", "static")
+if not os.path.exists(template_dir):
+    template_dir = os.path.join(CURRENT_FILE_DIR, "..", "templates")
+
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+templates = Jinja2Templates(directory=template_dir)
 
 @app.on_event("startup")
 async def startup_event():
