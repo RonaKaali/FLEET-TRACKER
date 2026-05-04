@@ -43,7 +43,8 @@ def get_db():
 # ----------------------------------------------------------------------
 # Configuration
 # ----------------------------------------------------------------------
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+API_DIR = os.path.abspath(os.path.dirname(__file__))
+BASE_DIR = os.path.abspath(os.path.join(API_DIR, ".."))
 EXPORT_DIR = os.path.join(BASE_DIR, "exports")
 CSV_LIVE = os.path.join(BASE_DIR, "live_location_log.csv")
 DB_PATH = os.path.join(BASE_DIR, "fleet_tracker.db")
