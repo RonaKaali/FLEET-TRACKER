@@ -337,25 +337,41 @@ async def add_target(name: str = Form(...), description: str = Form(None), ip_ad
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/targets/delete/{target_id}")
-async def delete_target(target_id: int):
-    session = SessionLocal()
-    target = session.query(Target).filter(Target.id == target_id).first()
-    if target:
-        session.delete(target)
-        session.commit()
-    session.close()
+async def delete_target(target_id: str):
+    db = get_db()
+    if db is not None:
+        # MongoDB Mode
+        db.targets.delete_one({"_id": ObjectId(target_id)})
+    else:
+        # SQLite Mode
+        session = SessionLocal()
+        try:
+            target = session.query(Target).filter(Target.id == int(target_id)).first()
+            if target:
+                session.delete(target)
+                session.commit()
+        finally:
+            session.close()
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/data/reset")
 async def reset_data():
-    session = SessionLocal()
-    session.query(LocationLog).delete()
-    session.commit()
-    session.close()
-    # Also clear CSV
-    if os.path.isfile(CSV_LIVE):
-        os.remove(CSV_LIVE)
-    init_live_csv()
+    db = get_db()
+    if db is not None:
+        # MongoDB Mode
+        db.location_logs.delete_many({})
+    else:
+        # SQLite Mode
+        session = SessionLocal()
+        try:
+            session.query(LocationLog).delete()
+            session.commit()
+        finally:
+            session.close()
+        # Also clear CSV
+        if os.path.isfile(CSV_LIVE):
+            os.remove(CSV_LIVE)
+        init_live_csv()
     return RedirectResponse(url="/", status_code=303)
 
 from pydantic import BaseModel
